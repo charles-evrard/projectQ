@@ -23,9 +23,14 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
+    "@nestjs/axios": "^3.1.1",
     "@nestjs/common": "^10.3.2",
     "@nestjs/core": "^10.4.4",
     "@nestjs/platform-express": "^10.4.4",
+    "@nestjs/swagger": "^8.0.1",
+    "axios": "^1.7.7",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
     "reflect-metadata": "^0.2.1",
     "rxjs": "^7.8.1"
   },
