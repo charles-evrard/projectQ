@@ -1,14 +1,18 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { SuggestService } from './suggest.service';
 import { Observable } from 'rxjs';
 import { AxiosResponse } from 'axios';
+import { SuggestPostDto } from './suggest.interfaces';
 
 @Controller('suggest')
 export class SuggestController {
   constructor(private readonly suggestService: SuggestService) {}
 
   @Post()
-  suggest(@Body('q') q: string): Observable<AxiosResponse<any>> {
+  @HttpCode(200)
+  suggest(
+    @Body() { q }: SuggestPostDto,
+  ): Promise<AxiosResponse<any> | Observable<AxiosResponse<any>>> {
     return this.suggestService.getSuggestions(q);
   }
 }
