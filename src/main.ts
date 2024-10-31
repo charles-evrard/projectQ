@@ -13,7 +13,7 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix('/api/v1/suggest');
+  app.setGlobalPrefix('/api/v1');
 
   initSwagger(app);
 
@@ -31,5 +31,5 @@ function initSwagger(app: INestApplication): void {
     .addTag('ProjectQ')
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/v1/suggest/desc', app, document);
+  SwaggerModule.setup('api/v1/desc', app, document);
 }
