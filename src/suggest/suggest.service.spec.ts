@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SuggestService } from './suggest.service';
 import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
-import { BadRequestException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { AxiosResponse } from 'axios';
@@ -38,14 +37,6 @@ describe('SuggestService', () => {
   });
 
   describe('getSuggestions', () => {
-    it('should throw a BadRequestException for blacklisted queries', async () => {
-      const query = 'blocked';
-
-      await expect(service.getSuggestions(query)).rejects.toThrow(
-        new BadRequestException(`Query "${query}" is not allowed`),
-      );
-    });
-
     it('should return cached value', async () => {
       const query = 'cached  Query';
       const locale = 'fr_FR';
@@ -64,7 +55,6 @@ describe('SuggestService', () => {
     });
 
     it('should make an API call and cache the result if not in cache', async () => {
-      // Arrange
       const query = 'allowedQuery';
       const locale = 'fr_FR';
       const cacheKey = `suggest:${query}:${locale}`;

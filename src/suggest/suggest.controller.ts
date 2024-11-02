@@ -10,9 +10,7 @@ export class SuggestController {
 
   @Get()
   @HttpCode(200)
-  suggest(
-    @Query() { q }: SuggestGetDto,
-  ): Promise<AxiosResponse<any> | Observable<AxiosResponse<any>>> {
+  suggest(@Query() { q }: SuggestGetDto): Observable<AxiosResponse<any>> {
     return this.suggestService.getSuggestions(q);
   }
 }
