@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { catchError, from, map, Observable, throwError } from 'rxjs';
+import { catchError, map, Observable, throwError } from 'rxjs';
 import { AxiosResponse } from 'axios';
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 
