@@ -12,6 +12,7 @@ import {
   Observable,
   of,
   switchMap,
+  tap,
   throwError,
 } from 'rxjs';
 import { AxiosResponse } from 'axios';
@@ -47,11 +48,14 @@ export class SuggestService {
 
         // cache miss, proceed with API request
         return this.httpService.get(this.QWANT_API_URL, { params }).pipe(
+          tap(async (response) => {
+            try {
+              await this.cacheManager.set(cacheKey, response.data);
+            } catch (e) {
+              this.logger.error(`Failed to set cache: ${e}`);
+            }
+          }),
           map((response) => {
-            // Cache the API response
-            this.cacheManager
-              .set(cacheKey, response.data)
-              .catch((e) => this.logger.error(`Failed to set cache : ${e}`));
             return response.data;
           }),
           catchError((error) => {

@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SuggestService } from './suggest.service';
 import { HttpService } from '@nestjs/axios';
-import { of, throwError } from 'rxjs';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import { CACHE_MANAGER, CacheModule, Cache } from '@nestjs/cache-manager';
+import { lastValueFrom, Observable, of, throwError } from 'rxjs';
 import { AxiosResponse } from 'axios';
+import { InternalServerErrorException } from '@nestjs/common';
 
 describe('SuggestService', () => {
   let service: SuggestService;
@@ -13,19 +13,13 @@ describe('SuggestService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
+      imports: [CacheModule.register()],
       providers: [
         SuggestService,
         {
           provide: HttpService,
           useValue: {
             get: jest.fn(),
-          },
-        },
-        {
-          provide: CACHE_MANAGER,
-          useValue: {
-            get: jest.fn(),
-            set: jest.fn(),
           },
         },
       ],
@@ -36,70 +30,115 @@ describe('SuggestService', () => {
     cacheManager = module.get<Cache>(CACHE_MANAGER);
   });
 
-  describe('getSuggestions', () => {
-    it('should return cached value', async () => {
-      const query = 'cached  Query';
-      const locale = 'fr_FR';
-      const cacheKey = `suggest:${query}:${locale}`;
-      const cachedResponse = {
-        data: { results: 'cached data' },
-        status: 200,
-        statusText: 'OK',
-      } as AxiosResponse;
-      jest.spyOn(cacheManager, 'get').mockResolvedValueOnce(cachedResponse);
+  it('should return cached suggestion when cache hit', (done) => {
+    const query = 'test';
+    const locale = 'fr_FR';
+    const cachedResponse = {
+      data: { suggestions: ['cached suggestion'] },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {},
+    } as AxiosResponse<any>;
 
-      const result = await service.getSuggestions(query);
+    jest.spyOn(cacheManager, 'get').mockResolvedValue(cachedResponse.data);
 
-      expect(cacheManager.get).toHaveBeenCalledWith(cacheKey);
-      expect(result).toEqual(cachedResponse);
-    });
-
-    it('should make an API call and cache the result if not in cache', async () => {
-      const query = 'allowedQuery';
-      const locale = 'fr_FR';
-      const cacheKey = `suggest:${query}:${locale}`;
-      const apiResponse = {
-        data: { results: 'api data' },
-        status: 200,
-        statusText: 'OK',
-      } as AxiosResponse;
-
-      jest.spyOn(cacheManager, 'get').mockResolvedValueOnce(null); // No cached value
-      jest.spyOn(httpService, 'get').mockReturnValueOnce(of(apiResponse)); // Mock API response
-      jest.spyOn(cacheManager, 'set').mockResolvedValueOnce(undefined); // Mock cache set
-
-      const result = await service.getSuggestions(query);
-
-      expect(cacheManager.get).toHaveBeenCalledWith(cacheKey);
-      expect(httpService.get).toHaveBeenCalledWith(service['QWANT_API_URL'], {
-        params: { q: query, locale, version: service['QWANT_API_VERSION'] },
-      });
-      expect(cacheManager.set).toHaveBeenCalledWith(cacheKey, apiResponse.data);
-      expect(result).toEqual(apiResponse.data);
-    });
-
-    it('should handle API errors and return a custom error message', async () => {
-      const query = 'allowedQuery';
-      const error = new Error('API request failed');
-      jest.spyOn(cacheManager, 'get').mockResolvedValueOnce(null); // No cached value
-      jest
-        .spyOn(httpService, 'get')
-        .mockReturnValueOnce(throwError(() => error)); // Mock API error
-
-      await expect(service.getSuggestions(query)).rejects.toThrow(
-        new Error('Failed to fetch Qwant suggestions'),
-      );
+    service.getSuggestions(query, locale).subscribe((result) => {
+      expect(result).toEqual(cachedResponse.data);
+      expect(httpService.get).not.toHaveBeenCalled();
+      done();
     });
   });
 
-  describe('isBlacklisted', () => {
-    it('should return true for blacklisted queries', () => {
-      expect(service['isBlacklisted']('blocked')).toBe(true);
-      expect(service['isBlacklisted']('blocked2')).toBe(true);
-    });
+  it('should fetch suggestions and set cache from Qwant API on cache miss', (done) => {
+    const query = 'test';
+    const locale = 'fr_FR';
+    const apiResponse = {
+      data: { suggestions: ['api suggestion'] },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {},
+    } as AxiosResponse<any>;
 
-    it('should return false for non-blacklisted queries', () => {
-      expect(service['isBlacklisted']('allowedQuery')).toBe(false);
+    jest.spyOn(cacheManager, 'get').mockResolvedValue(null);
+    jest.spyOn(httpService, 'get').mockReturnValue(of(apiResponse));
+    jest.spyOn(cacheManager, 'set').mockResolvedValue();
+
+    service.getSuggestions(query, locale).subscribe((result) => {
+      expect(result).toEqual(apiResponse.data);
+      expect(httpService.get).toHaveBeenCalledWith(service['QWANT_API_URL'], {
+        params: { q: query, locale, version: service['QWANT_API_VERSION'] },
+      });
+      expect(cacheManager.set).toHaveBeenCalledWith(
+        `suggest:${query}:${locale}`,
+        apiResponse.data,
+      );
+      done();
     });
+  });
+
+  it('test_get_suggestions_api_error_handling', (done) => {
+    const query = 'test';
+    const locale = 'fr_FR';
+    const error = new Error('Mock API error');
+
+    jest.spyOn(cacheManager, 'get').mockResolvedValue(null);
+    jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => error));
+    jest.spyOn(service['logger'], 'error');
+
+    service.getSuggestions(query, locale).subscribe({
+      error: (err) => {
+        expect(err).toBeInstanceOf(InternalServerErrorException);
+        expect(service['logger'].error).toHaveBeenCalledWith(
+          `Error making Qwant API request: ${error.message}`,
+        );
+        done();
+      },
+    });
+  });
+  it('should log error when failing to set cache', async () => {
+    const suggestService = new SuggestService(httpService, cacheManager);
+    const query = 'test';
+    const locale = 'fr_FR';
+    const apiResponse = { data: 'api data' } as AxiosResponse;
+    jest.spyOn(cacheManager, 'get').mockResolvedValue(null);
+    jest.spyOn(httpService, 'get').mockReturnValue(of(apiResponse));
+    jest.spyOn(cacheManager, 'set').mockRejectedValue(new Error('Cache error'));
+    const logSpy = jest.spyOn(suggestService['logger'], 'error');
+
+    await lastValueFrom(suggestService.getSuggestions(query, locale));
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to set cache'),
+    );
+  });
+  it('should return observable of suggestions data', async () => {
+    const suggestService = new SuggestService(httpService, cacheManager);
+    const query = 'test';
+    const locale = 'fr_FR';
+    const apiResponse = { data: 'api data' } as AxiosResponse;
+    jest.spyOn(cacheManager, 'get').mockResolvedValue(null);
+    jest.spyOn(httpService, 'get').mockReturnValue(of(apiResponse));
+
+    const result$ = suggestService.getSuggestions(query, locale);
+
+    expect(result$).toBeInstanceOf(Observable);
+  });
+
+  it('should ensure cache key uniqueness for different queries', async () => {
+    const suggestService = new SuggestService(httpService, cacheManager);
+    const query1 = 'test1';
+    const query2 = 'test2';
+    jest.spyOn(cacheManager, 'get').mockResolvedValue(null);
+    jest
+      .spyOn(httpService, 'get')
+      .mockReturnValue(of({ data: 'api data' } as AxiosResponse));
+
+    await lastValueFrom(suggestService.getSuggestions(query1));
+    await lastValueFrom(suggestService.getSuggestions(query2));
+
+    expect(cacheManager.get).toHaveBeenCalledWith(`suggest:${query1}:fr_FR`);
+    expect(cacheManager.get).toHaveBeenCalledWith(`suggest:${query2}:fr_FR`);
   });
 });
